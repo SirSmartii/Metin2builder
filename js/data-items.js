@@ -20,7 +20,7 @@
       items.push(it);
     });
   }
-  const DF = { innate: ["dssfks"] };                                   // zufälliger DSS/FKS-Wert
+  const DF = { innate: ["dss", "fks"] };                               // zwei Zeilen: Durchschnittsschaden und Fertigkeitsschaden (einzeln oder beide, auch negativ)
   const TRI = { fixed: { devil: { 0: 2, 9: 12 }, human: { 0: 2, 9: 12 } } };
   const R105 = { fixed: { human: { 0: 2, 9: 15 }, monster: { 0: 1, 9: 5 } } };
   const DD = { fixed: { skillDmg: { 0: 1, 9: 5, 15: 15 } } };

@@ -10,6 +10,7 @@
   const pf = (x, d) => (x * 100).toLocaleString("de-DE", { minimumFractionDigits: d == null ? 1 : d, maximumFractionDigits: d == null ? 1 : d }) + " %";
   const sign = (x) => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %";
   App.esc = esc; App.nf = nf; App.pf = pf; App.$ = $; App.$$ = $$;
+  const hitsFmt = (h) => (h >= 100 ? "99+" : h >= 10 ? String(Math.floor(h)) : (Math.floor(h * 10) / 10).toLocaleString("de-DE", { minimumFractionDigits: 1 }));
   const bname = (id) => (App.db.bonusTypes[id] ? App.db.bonusTypes[id].name : id);
   const bunit = (id) => (App.db.bonusTypes[id] ? App.db.bonusTypes[id].u : "");
   const bfmt = (id, v) => bname(id) + " " + (v > 0 ? "+" : "") + nf(v) + bunit(id);
@@ -44,6 +45,22 @@
     return b;
   };
 
+  /* Sortiert eingebaute Zufallsboni in die passende Zeile des Gegenstands (z. B. Fertigkeitsschaden, der bisher als freie Bonus-Zeile hing). */
+  App.fixInnate = function (e) {
+    const db = App.master, it = e && C.itemById(db, e.item);
+    if (!it || !it.innate || !it.innate.length) return false;
+    const pools = it.innate.map((p) => db.pools[p] || {});
+    const slot = C.slotById(db, it.slot), lp = (slot && db.pools[slot.pool]) || {};
+    const before = JSON.stringify([e.innate || [], e.lines || []]);
+    const out = it.innate.map(() => null), loose = [];
+    (e.innate || []).forEach((l, i) => { if (!l || !l.b) return; if (i < out.length && pools[i][l.b] != null && !out[i]) out[i] = l; else loose.push(l); });
+    const lines = (e.lines || []).filter((l) => { if (l && l.b && lp[l.b] == null && pools.some((p) => p[l.b] != null)) { loose.push(l); return false; } return true; });
+    loose.forEach((l) => { const i = out.findIndex((o, j) => !o && pools[j][l.b] != null); if (i >= 0) out[i] = l; else lines.push(l); });
+    if (JSON.stringify([out, lines]) === before) return false;
+    e.innate = out; e.lines = lines;
+    return true;
+  };
+
   App.init = function () {
     const def = window.M2DEFAULTS();
     const stored = load(LS.db);
@@ -55,11 +72,20 @@
       const gone = new Set(App.db.removedItems || []);
       def.items.forEach((it) => { if (!have.has(it.id) && !gone.has(it.id)) App.db.items.push(it); });
     }
+    // Waffen mit Durchschnitts- und Fertigkeitsschaden: früher eine gemeinsame Zeile, jetzt zwei eigene
+    let dbChanged = false;
+    ["dss", "fks"].forEach((p) => { if (!App.master.pools[p]) { App.master.pools[p] = def.pools[p]; dbChanged = true; } });
+    App.master.items.forEach((it) => { if (it.innate && it.innate.indexOf("dssfks") >= 0) { it.innate = it.innate.reduce((a, p) => a.concat(p === "dssfks" ? ["dss", "fks"] : [p]), []); dbChanged = true; } });
+    if (dbChanged && stored) App.saveDb();
     App.refreshDb();
     App.builds = load(LS.builds) || [];
     if (!App.builds.length) App.builds = [App.newBuild("warrior", "Mein Krieger")];
     const cur = load(LS.cur);
     App.build = App.builds.find((b) => b.id === cur) || App.builds[0];
+    let fixed = false;
+    App.builds.forEach((b) => Object.keys(b.equip || {}).forEach((sid) => { if (App.fixInnate(b.equip[sid])) fixed = true; }));
+    if (fixed) App.saveBuilds();
+    if (window.Inv) { let f = false; window.Inv.items.forEach((r) => { if (r && r.entry && App.fixInnate(r.entry)) f = true; }); if (f) window.Inv.save(); }
     bindGlobal();
     App.renderAll();
   };
@@ -80,6 +106,9 @@
     App.res = C.evaluate(b, db);
     App.levers = O.levers(b, db, App.res, App.planOpts());
     App.diag = O.diagnostics(b, db, App.res);
+    App.surv = C.survival(b, db, App.res.col);
+    { const need = Math.max(2, O.goal.minHits || 0), h = App.surv.hits;
+      if (h < need) App.diag.unshift({ sev: h < 1.5 ? 3 : 2, icon: "💀", title: "Du hältst nur " + hitsFmt(h) + " Treffer aus", text: "Ein Treffer deines Gegners nimmt dir etwa " + nf(App.surv.taken) + " von " + nf(App.surv.hp) + " TP" + (App.surv.estimated ? " (Gegnerschaden geschätzt, im Feld „Verteidigung“ eichen)" : "") + ". Mehr TP, Verteidigung und Widerstände helfen; im Optimierer kannst du das Überleben gewichten." }); }
     renderResult(); renderEquip(); renderTotals(); renderBottleneck(); renderBreakdown(); renderDefense();
     if (!noSave) App.saveBuilds();
     scheduleAnalysis();
@@ -367,7 +396,7 @@
 
   function renderDefense() {
     const b = App.build, db = App.db, col = App.res.col, g = (id) => col.B[id] || 0;
-    const d = C.defense(b, db, col);
+    const d = C.defense(b, db, col), sv = App.surv || C.survival(b, db, col);
     const bar = (id, cap) => { const v = g(id); return `<div class="total-row def" style="border:0;padding:2px 0"><span class="n">${esc(bname(id))}</span><span class="v">${nf(v)}${bunit(id)}</span></div><div class="progress" style="height:5px"><i data-w="${Math.min(100, (v / cap) * 100).toFixed(0)}" style="background:linear-gradient(90deg,#2b6cb0,var(--azure))"></i></div>`; };
     const keys = b.mode === "pvp"
       ? ["resSword", "resTwohand", "resDagger", "resBell", "resFan", "resArrow", "resClaw", "resMagic", "resHuman", "resAvg", "resSkill", "block"]
@@ -378,6 +407,16 @@
         <div class="stat"><div class="k">Verteidigung</div><div class="v">${nf(d.def)}</div><div class="s">Level + VIT + Ausrüstung</div></div>
         <div class="stat"><div class="k">Trefferpunkte</div><div class="v">${nf(d.hp)}</div><div class="s">VIT ${d.vit}</div></div>
       </div>
+      <div class="sect-title" style="margin-top:12px">Hältst du das aus?</div>
+      <div class="stat-grid" style="margin-top:0">
+        <div class="stat ${sv.hits < 2 ? "bad" : sv.hits >= 5 ? "good" : ""}"><div class="k">Treffer bis zum Tod</div><div class="v">${hitsFmt(sv.hits)}</div><div class="s">gegen dein Ziel</div></div>
+        <div class="stat"><div class="k">Schaden pro Treffer</div><div class="v">${nf(sv.taken)}</div><div class="s">${sv.block ? "Block " + nf(sv.block) + " %" : "nach Abzügen"}</div></div>
+      </div>
+      <div class="row c2" style="margin-top:8px">
+        <div class="field"><label>Der Gegner trifft mit</label><select data-f="threat-kind"><option value="phys" ${sv.kind === "phys" ? "selected" : ""}>normalen Treffern</option><option value="skill" ${sv.kind === "skill" ? "selected" : ""}>Fertigkeiten</option><option value="magic" ${sv.kind === "magic" ? "selected" : ""}>Magie</option></select></div>
+        <div class="field"><label data-tip="Trag ein, wie viel Schaden du mit dieser Ausrüstung pro Treffer bekommst. Daraus wird die Stärke des Gegners berechnet.">Ich bekomme pro Treffer</label><input type="number" min="0" placeholder="z. B. 2500" data-f="threat-seen"></div>
+      </div>
+      <div class="hint">${sv.estimated ? "Gegnerschaden geschätzt: roh " + nf(sv.raw) + ". Für echte Werte oben eintragen, was du im Spiel pro Treffer bekommst." : "Gegner geeicht: roher Schaden " + nf(sv.raw) + `. <a href="#" data-act="threat-reset">Zurück zur Schätzung</a>`}${sv.parts.length ? " Abzüge: " + sv.parts.map((p) => (p.id === "def" ? "Verteidigung" : bname(p.id)) + " −" + nf((1 - p.f) * 100) + " %").join(", ") + "." : ""}</div>
       <div class="stack" style="gap:3px;margin-top:10px">${keys.filter((k) => g(k) || ["resMagic", "resAvg", "resSkill", "block"].indexOf(k) >= 0).map((k) => bar(k, 100)).join("")}</div>`;
     FX.fillBars($("#panel-defense"));
   }
@@ -492,11 +531,14 @@
   /* ---------- Optimierer-Ansicht ---------- */
   // Planungs-Einstellungen: gelten für Optimierer, Upgrade-Pfad, „Nächste beste Schritte", Slot-Potenzial und „erreichbar"-Werte
   const LS_PLAN = "m2b_plan_v1";
-  const optState = Object.assign({ mode: "fill", tier: "good", extras: false, rare: false, upgrade: true, items: false, wtype: "same" }, load(LS_PLAN) || {}, { result: null, path: null, busy: false });
-  const savePlan = () => { const o = optState; save(LS_PLAN, { mode: o.mode, tier: o.tier, extras: o.extras, rare: o.rare, upgrade: o.upgrade, items: o.items, wtype: o.wtype }); o.result = null; o.path = null; };
+  const optState = Object.assign({ mode: "fill", tier: "good", extras: false, rare: false, upgrade: true, items: false, wtype: "same", surv: 20, minHits: 0 }, load(LS_PLAN) || {}, { result: null, path: null, busy: false });
+  const syncGoal = () => { O.goal = { w: Math.max(0, Math.min(100, Number(optState.surv) || 0)) / 100, minHits: Math.max(0, Number(optState.minHits) || 0) }; };
+  syncGoal();
+  App.goalOn = () => O.goal.w > 0 || O.goal.minHits > 0;
+  const savePlan = () => { const o = optState; save(LS_PLAN, { mode: o.mode, tier: o.tier, extras: o.extras, rare: o.rare, upgrade: o.upgrade, items: o.items, wtype: o.wtype, surv: o.surv, minHits: o.minHits }); syncGoal(); o.result = null; o.path = null; };
   App.plan = optState;
   App.planOpts = () => ({ tier: optState.tier, noRare: !optState.rare, upgrade: optState.upgrade, extras: optState.extras, items: optState.items || optState.mode === "max", wtype: optState.wtype });
-  App.planText = () => [optState.tier === "good" ? "realistische Werte" : "Höchstwerte", optState.rare ? "mit 6./7. Bonus" : "ohne 6./7. Bonus", optState.extras ? "mit Kostümen & Co." : "ohne Kostüme & Co.", App.planOpts().items ? "mit Gegenstandstausch" : "ohne Gegenstandstausch"].join(", ");
+  App.planText = () => [optState.tier === "good" ? "realistische Werte" : "Höchstwerte", optState.rare ? "mit 6./7. Bonus" : "ohne 6./7. Bonus", optState.extras ? "mit Kostümen & Co." : "ohne Kostüme & Co.", App.planOpts().items ? "mit Gegenstandstausch" : "ohne Gegenstandstausch"].concat(optState.surv > 0 ? ["Überleben zu " + optState.surv + " % gewichtet"] : [], optState.minHits > 0 ? ["mindestens " + optState.minHits + " Treffer aushalten"] : []).join(", ");
   function diffBuilds(a, b) {
     const db = App.db, out = [];
     db.slots.forEach((slot) => {
@@ -673,9 +715,10 @@
 
   function renderOpt() {
     const b = App.build, db = App.db, s = optState, cls = db.classes[b.cls];
-    const cur = O.score(b, db);
+    const cur = O.damage(b, db);
     const r = s.result;
     const diff = r ? diffBuilds(b, r.build) : [];
+    const rd = r ? { d0: O.damage(b, db), d1: O.damage(r.build, db), h0: C.survival(b, db).hits, h1: C.survival(r.build, db).hits } : null;
     const p = s.path;
     let chart = "";
     if (p && p.path.length) {
@@ -703,6 +746,10 @@
             <div class="field"><label data-tip="Gilt überall, wo ein anderer Gegenstand vorgeschlagen wird">Waffentyp bei Vorschlägen</label><select data-f="opt-wtype"><option value="same" ${s.wtype === "same" ? "selected" : ""}>wie meine aktuelle Waffe</option><option value="any" ${s.wtype === "any" ? "selected" : ""}>egal, der beste</option>${cls.wtypes.map((t) => `<option value="${t}" ${s.wtype === t ? "selected" : ""}>${C.WTYPE_NAME[t]}</option>`).join("")}</select></div>
             <label class="inline" style="cursor:pointer"><input type="checkbox" data-f="opt-upgrade" ${s.upgrade ? "checked" : ""}> <span>Verbesserungsstufen bis zum Maximum einplanen</span></label>
             <label class="inline" style="cursor:pointer"><input type="checkbox" data-f="opt-rare" ${s.rare ? "checked" : ""}> <span>6. und 7. Bonus einplanen</span></label>
+            <div class="sect-title" style="margin-top:6px">Schaden oder Überleben?</div>
+            <div class="field"><label data-tip="0 % = nur Schaden. Je höher, desto eher wählt der Optimierer TP, Verteidigung und Widerstände.">Gewicht Überleben: <span id="opt-surv-v">${s.surv}</span> %</label><input type="range" min="0" max="80" step="5" value="${s.surv}" data-f="opt-surv"></div>
+            <div class="field"><label data-tip="Der Optimierer baut zuerst so viel Verteidigung auf, dass du so viele Treffer deines Ziels überlebst. 0 = keine Vorgabe.">Mindestens so viele Treffer aushalten</label><input type="number" min="0" max="50" step="1" value="${s.minHits}" data-f="opt-minhits"></div>
+            <div class="hint">Gerechnet gegen den Gegner aus dem Tab Build. Wie hart er zuschlägt, stellst du dort im Feld „Verteidigung“ ein. Ist das Überleben gewichtet, zeigen die Prozentwerte der Vorschläge die gemeinsame Bewertung aus Schaden und Überleben.</div>
             <label class="inline" style="cursor:pointer"><input type="checkbox" data-f="opt-extras" ${s.extras ? "checked" : ""}> <span>Auch Kostüme, Schulterband, Pet, Alchemie einplanen</span></label>
             <label class="inline" style="cursor:pointer"><input type="checkbox" data-f="opt-items" ${s.items || s.mode === "max" ? "checked" : ""} ${s.mode === "max" ? "disabled" : ""}> <span>Vorschläge und Upgrade-Pfad: auch andere Gegenstände (Tausch, leere Slots)</span></label>
             <div class="hint">Diese Einstellungen gelten überall: für „Optimieren", den Upgrade-Pfad, die Vorschläge im Build-Tab und die „+x % möglich"-Anzeige der Slots.</div>
@@ -717,9 +764,13 @@
         <div class="panel"><div class="panel-head"><div class="panel-title">Ergebnis</div><div class="spacer"></div>
           ${r ? `<button class="btn btn-sm" data-act="opt-saveas">Als neuen Build speichern</button><button class="btn btn-sm btn-primary" data-act="opt-apply">Übernehmen</button>` : ""}</div>
           ${r ? `<div class="row c3">
-              <div class="stat"><div class="k">Jetzt</div><div class="v">${nf(r.before)}</div></div>
-              <div class="stat good"><div class="k">Optimiert</div><div class="v">${nf(r.after)}</div></div>
-              <div class="stat ${r.after > r.before * 1.001 ? "good" : ""}"><div class="k">Gewinn</div><div class="v">${r.before > 0 ? sign(r.after / r.before - 1) : "–"}</div></div></div>
+              <div class="stat"><div class="k">Schaden jetzt</div><div class="v">${nf(rd.d0)}</div></div>
+              <div class="stat good"><div class="k">Schaden optimiert</div><div class="v">${nf(rd.d1)}</div></div>
+              <div class="stat ${rd.d1 > rd.d0 * 1.001 ? "good" : ""}"><div class="k">Schaden</div><div class="v">${rd.d0 > 0 ? sign(rd.d1 / rd.d0 - 1) : "–"}</div></div></div>
+            <div class="row c3" style="margin-top:8px">
+              <div class="stat"><div class="k">Treffer bis zum Tod jetzt</div><div class="v">${hitsFmt(rd.h0)}</div></div>
+              <div class="stat good"><div class="k">Treffer bis zum Tod optimiert</div><div class="v">${hitsFmt(rd.h1)}</div></div>
+              <div class="stat ${rd.h1 > rd.h0 * 1.001 ? "good" : ""}"><div class="k">Überleben</div><div class="v">${sign(rd.h1 / rd.h0 - 1)}</div></div></div>
             <div class="stack" style="margin-top:12px">${diff.length ? diff.map((d) => `<div class="sugg clickable" data-act="detail" data-src="opt" data-v="${d.slot.id}" style="grid-template-columns:34px 1fr auto"><div class="rank">${d.slot.icon}</div><div><div class="t">${esc(d.slot.name)}</div><div class="d" style="font-size:12.5px;line-height:1.6">${d.ch.join(" · ")}</div></div><div class="g" style="color:var(--gold-2)">Details ›</div></div>`).join("") : `<div class="empty-state">Keine Änderung nötig. Der Build ist für diese Einstellungen bereits optimal.</div>`}</div>`
           : `<div class="empty-state">Aktueller Schaden: <b class="gold">${nf(cur)}</b>.<br>Starte links die Optimierung, dann siehst du hier jede einzelne Änderung.</div>`}
         </div>
@@ -831,6 +882,7 @@
         }
         case "opt-tier": optState.tier = v; savePlan(); renderOpt(); break;
         case "goto-opt": App.setView("opt"); break;
+        case "threat-reset": b.threat = Object.assign({}, b.threat, { raw: 0 }); App.update(); break;
         case "goto-era": if (window.Admin) window.Admin.section = "era"; App.setView("admin"); break;
         case "lang": if (window.I18N) window.I18N.set(v); break;
         case "detail": {
@@ -899,6 +951,10 @@
         case "opt-wtype": optState.wtype = el.value; savePlan(); renderOpt(); break;
         case "opt-extras": optState.extras = el.checked; savePlan(); renderOpt(); break;
         case "opt-rare": optState.rare = el.checked; savePlan(); renderOpt(); break;
+        case "opt-surv": optState.surv = num(el.value, 0); savePlan(); App.update(true); renderOpt(); break;
+        case "opt-minhits": optState.minHits = Math.max(0, Math.round(num(el.value, 0))); savePlan(); App.update(true); renderOpt(); break;
+        case "threat-kind": b.threat = Object.assign({}, b.threat, { kind: el.value }); App.update(); break;
+        case "threat-seen": { const seen = num(el.value, 0); if (seen > 0) { b.threat = Object.assign({}, b.threat, { raw: C.threatFromSeen(b, db, seen) }); App.update(); FX.toast("Gegner geeicht"); } break; }
         case "opt-upgrade": optState.upgrade = el.checked; savePlan(); renderOpt(); break;
         case "opt-items": optState.items = el.checked; savePlan(); renderOpt(); break;
       }

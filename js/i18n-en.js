@@ -328,6 +328,19 @@
     "Alle Anpassungen verwerfen und die offiziellen Werte laden?": "Discard all changes and load the official values?",
     "Alle Werte dieses Pools multiplizieren mit:": "Multiply all values of this pool by:", "Kennung des Bonus (siehe Bonus-Namen)": "Bonus id (see Bonus names)",
 
+    /* ---------- Überleben ---------- */
+    "Hältst du das aus?": "Can you take it?", "Treffer bis zum Tod": "Hits until death", "gegen dein Ziel": "against your target", "Schaden pro Treffer": "Damage per hit",
+    "nach Abzügen": "after reductions", "Block # %": "Block #%", "Der Gegner trifft mit": "The enemy hits with", "normalen Treffern": "normal hits", "Fertigkeiten": "skills",
+    "Ich bekomme pro Treffer": "I take per hit", "z. B. #": "e.g. #", "Gegner geeicht": "Enemy calibrated", "Zurück zur Schätzung": "Back to the estimate",
+    "Trag ein, wie viel Schaden du mit dieser Ausrüstung pro Treffer bekommst. Daraus wird die Stärke des Gegners berechnet.": "Enter how much damage you take per hit with this gear. The enemy's strength is calculated from it.",
+    "Schaden oder Überleben?": "Damage or survival?", "Gewicht Überleben:": "Survival weight:", "Mindestens so viele Treffer aushalten": "Survive at least this many hits",
+    "0 % = nur Schaden. Je höher, desto eher wählt der Optimierer TP, Verteidigung und Widerstände.": "0% = damage only. The higher, the more the optimizer picks HP, defence and resistances.",
+    "Der Optimierer baut zuerst so viel Verteidigung auf, dass du so viele Treffer deines Ziels überlebst. 0 = keine Vorgabe.": "The optimizer first builds enough defence for you to survive this many hits from your target. 0 = no requirement.",
+    "Gerechnet gegen den Gegner aus dem Tab Build. Wie hart er zuschlägt, stellst du dort im Feld „Verteidigung“ ein. Ist das Überleben gewichtet, zeigen die Prozentwerte der Vorschläge die gemeinsame Bewertung aus Schaden und Überleben.": "Calculated against the enemy from the Build tab. Set how hard it hits in the “Defence” panel there. If survival is weighted, the percentages of the suggestions show the combined rating of damage and survival.",
+    "Schaden jetzt": "Damage now", "Schaden optimiert": "Damage optimized", "Treffer bis zum Tod jetzt": "Hits until death now", "Treffer bis zum Tod optimiert": "Hits until death optimized",
+    "Überleben": "Survival", "Überleben zu # % gewichtet": "survival weighted #%", "mindestens # Treffer aushalten": "survive at least # hits",
+    "Du hältst nur # Treffer aus": "You only survive # hits",
+
     /* ---------- Bausteine für zusammengesetzte Texte ---------- */
     "Erkannt": "Recognised", "anlegen": "equip", "tauschen": "swap", "nutzen": "use", "verbessern": "upgrade", "statt": "instead of", "Zufallsbonus": "random bonus",
     "Geiststeine anpassen": "adjust spirit stones", "Gegenstände": "Items", "Bonus-Pools": "Bonus pools", "Slots": "Slots", "Schritt": "Step", "Gegen": "Against",
@@ -343,6 +356,11 @@
     [/^(.+) wirkt hier nur mit einem Zehntel\.$/, "$1 only counts at one tenth here."],
     [/^Das Ziel hat (\S+) % (.+)-Verteidigung\. Bruch der Waffenverteidigung \(Talisman\) wirkt dagegen\.$/, "The target has $1% $2 defence. Weapon Defence Break (talisman) works against it."],
     [/^Dein Build „(.+)“ nutzt Dinge, die es in diesem Stand nicht gibt: (.+)\. Sie bleiben gespeichert, ausgeblendete Slots zählen aber nicht mehr mit\.$/, "Your build “$1” uses things that do not exist in this era: $2. They stay saved, but hidden slots no longer count."],
+    [/^Gegnerschaden geschätzt: roh (\S+)\. Für echte Werte oben eintragen, was du im Spiel pro Treffer bekommst\. Abzüge: (.+)\.$/, "Enemy damage estimated: raw $1. For real values enter above what you take per hit in the game. Reductions: $2."],
+    [/^Gegnerschaden geschätzt: roh (\S+)\. Für echte Werte oben eintragen, was du im Spiel pro Treffer bekommst\.$/, "Enemy damage estimated: raw $1. For real values enter above what you take per hit in the game."],
+    [/^Gegner geeicht: roher Schaden (\S+)$/, "Enemy calibrated: raw damage $1"],
+    [/^\. Abzüge: (.+)\.$/, ". Reductions: $1."],
+    [/^Ein Treffer deines Gegners nimmt dir etwa (\S+) von (\S+) TP.*$/, "One hit from your enemy takes about $1 of your $2 HP. More HP, defence and resistances help; you can weight survival in the optimizer."],
     [/^Als „(.+)“ gespeichert$/, "Saved as “$1”"],
     [/^„(.+)“ als Server-Item angelegt$/, "“$1” created as a server item"],
     [/^(.+) ins Inventar gelegt$/, "$1 put into the inventory"],

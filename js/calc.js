@@ -481,5 +481,46 @@
     return { def, hp, vit };
   };
 
+  /* ---------- Überleben: wie viele Treffer des Gegners hältst du aus? ----------
+     Grobes Modell. Der rohe Schaden des Gegners ist nicht im Wiki belegt und wird geschätzt,
+     bis der Spieler ihn über „so viel bekomme ich pro Treffer" eicht (build.threat.raw). */
+  const WRES_BONUS = { sword: "resSword", twohand: "resTwohand", dagger: "resDagger", bow: "resArrow", bell: "resBell", fan: "resFan", claw: "resClaw" };
+  C.threatDefault = function (T) {
+    if (T.atk > 0) return T.atk;
+    const lv = T.lvl || 100;
+    return Math.round(lv * (T.kind === "player" ? 30 : T.boss || T.kind === "boss" ? 40 : T.kind === "stone" ? 14 : 18));
+  };
+  C.survival = function (build, db, col) {
+    col = col || C.collect(build, db);
+    const g = (id) => col.B[id] || 0, cap = (v) => Math.max(0, Math.min(90, v));
+    const d = C.defense(build, db, col);
+    const T = C.resolveTarget(build, db), th = build.threat || {};
+    const kind = th.kind || "phys";                       // phys = normaler Treffer, skill = Fertigkeit, magic = Magie
+    const raw = th.raw > 0 ? th.raw : C.threatDefault(T);
+    const parts = [];
+    let dmg = raw;
+    if (kind !== "magic") { dmg = Math.max(raw * 0.05, raw - d.def); parts.push({ id: "def", f: dmg / raw }); }
+    const mul = (id) => { const p = cap(g(id)); if (p > 0) { parts.push({ id, f: 1 - p / 100 }); dmg *= 1 - p / 100; } };
+    if (kind === "magic") mul("resMagic");
+    if (T.kind === "player") {
+      if (kind !== "magic") { const wt = ((db.classes[T.cls] || {}).wtypes || [])[0]; if (WRES_BONUS[wt]) mul(WRES_BONUS[wt]); }
+      mul("resHuman");
+      if (T.cls) mul("res" + T.cls.charAt(0).toUpperCase() + T.cls.slice(1));
+      mul(kind === "phys" ? "resAvg" : "resSkill");
+    } else {
+      mul("resMonster");
+      if (kind === "phys") mul("resAvg"); else if (kind === "skill") mul("resSkill");
+    }
+    const block = kind === "phys" ? cap(g("block")) : 0;
+    const perHit = Math.max(1, dmg * (1 - block / 100));
+    return { def: d.def, hp: d.hp, raw, kind, taken: Math.max(1, dmg), block, hits: d.hp / perHit, parts, estimated: !(th.raw > 0) };
+  };
+  // roher Gegnerschaden, bei dem der Build genau „seen" pro Treffer bekäme
+  C.threatFromSeen = function (build, db, seen) {
+    const sv = C.survival(Object.assign({}, build, { threat: Object.assign({}, build.threat, { raw: 1e9 }) }), db);
+    const m = sv.parts.filter((p) => p.id !== "def").reduce((a, p) => a * p.f, 1);
+    return Math.round(seen / Math.max(0.01, m) + (sv.kind !== "magic" ? sv.def : 0));
+  };
+
   window.Calc = C;
 })();

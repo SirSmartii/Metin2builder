@@ -9,7 +9,20 @@
   // Zeilen und Steine, die weniger als 0,15 % bringen, werden nicht vorgeschlagen (sonst füllt der Optimierer alles mit Kleinkram)
   const MIN_GAIN = 0.0015;
 
-  O.score = function (build, db) { return C.evaluate(build, db, { light: true, fast: true }).exp; };
+  O.damage = function (build, db) { return C.evaluate(build, db, { light: true, fast: true }).exp; };
+  /* Bewertung eines Builds. Ohne Ziel-Einstellung reiner Schaden. Mit O.goal fließt das Überleben ein:
+     w = Gewicht (0…1) der ausgehaltenen Treffer, minHits = Treffer, die man mindestens aushalten will. */
+  O.goal = { w: 0, minHits: 0 };
+  O.score = function (build, db) {
+    const G = O.goal;
+    if (!G || (!(G.w > 0) && !(G.minHits > 0))) return O.damage(build, db);
+    const col = C.collect(build, db);
+    let s = C.evaluate(build, db, { light: true, fast: true, col }).exp;
+    const sv = C.survival(build, db, col);
+    if (G.w > 0) s = Math.pow(Math.max(s, 1e-9), 1 - G.w) * Math.pow(sv.hits * 1000, G.w);
+    if (G.minHits > 0 && sv.hits < G.minHits) s *= Math.pow(sv.hits / G.minHits, 3);
+    return s;
+  };
 
   O.entry = function (build, slotId) {
     if (!build.equip[slotId]) build.equip[slotId] = { item: null, up: 0, lines: [], rare: [], innate: [], stones: [], on: false };

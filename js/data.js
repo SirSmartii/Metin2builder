@@ -84,7 +84,8 @@
     r_talisman: rareCommon(),
 
     // Eingebaute Zufallsboni (Wert je Verbesserungsstufe, höchste Variante)
-    dssfks: { avgDmg: [10, 20, 30, 40, 50, 60], skillDmg: [5, 10, 15, 20, 25, 30] },
+    dss: { avgDmg: [10, 20, 30, 40, 50, 60] },
+    fks: { skillDmg: [5, 10, 15, 20, 25, 30] },
     serpW1: { avgDmg: K(4, 19, 40), human: K(3, 15, 30), devil: K(3, 15, 30), animal: K(3, 15, 30), undead: K(3, 15, 30), orc: K(3, 15, 30), mystic: K(3, 15, 30) },
     serpW2: { monster: K(2, 13, 25), insect: K(3, 15, 30), zodiac: K(3, 15, 30), atkSpeed: K(16, 26, 45), sungma: K(6, 26, 47) },
     serpW3: { skillDmg: K(4, 19, 40), stone: K(1, 9, 18), desert: K(3, 15, 30), castSpeed: K(3, 15, 30), stun: K(2, 13, 25), slow: K(2, 13, 25), precision: K(2, 13, 25) },
