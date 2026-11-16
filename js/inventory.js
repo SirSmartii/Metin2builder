@@ -270,7 +270,7 @@
       if (d) it.def = { [up]: Math.round(d.v / f) };
       if (slotId === "armor") it.sockets = 3;
     }
-    db.items.push(it); db._itemIdx = null; App.saveDb();
+    App.master.items.push(it); App.refreshDb(); App.saveDb();
     return { item: it, up };
   };
 

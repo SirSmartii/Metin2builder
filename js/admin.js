@@ -4,7 +4,7 @@
   const App = window.App, C = window.Calc, FX = window.FX;
   const esc = App.esc, $ = App.$, $$ = App.$$;
   const A = { section: "items", slot: "weapon", q: "", pool: "weapon", edit: null };
-  const SECTIONS = [["items", "🗡️ Gegenstände"], ["pools", "🎲 Bonus-Pools"], ["slots", "🧩 Slots & Zeilen"], ["stones", "💠 Geiststeine"], ["targets", "🎯 Ziele"], ["toggles", "🧪 Biologe & Buffs"], ["bonus", "🏷️ Bonus-Namen"], ["ocr", "🔎 Erkennung"],["params", "⚙️ Formel-Parameter"], ["data", "💾 Sichern & Laden"]];
+  const SECTIONS = [["era", "🕰️ Zeitalter & Features"], ["items", "🗡️ Gegenstände"], ["pools", "🎲 Bonus-Pools"], ["slots", "🧩 Slots & Zeilen"], ["stones", "💠 Geiststeine"], ["targets", "🎯 Ziele"], ["toggles", "🧪 Biologe & Buffs"], ["bonus", "🏷️ Bonus-Namen"], ["ocr", "🔎 Erkennung"],["params", "⚙️ Formel-Parameter"], ["data", "💾 Sichern & Laden"]];
 
   const fmtVals = (v) => (Array.isArray(v) ? v.join(", ") : typeof v === "object" && v ? Object.keys(v).map((k) => k + ":" + v[k]).join(", ") : String(v == null ? "" : v));
   const parseVals = (s) => {
@@ -15,14 +15,14 @@
   };
   const fmtMap = (o) => Object.keys(o || {}).map((k) => k + ":" + o[k]).join(", ");
   const parseMap = (s) => { const o = {}; String(s).split(",").forEach((p) => { const [k, v] = p.split(":").map((x) => x.trim()); if (k && isFinite(Number(v))) o[k] = Number(v); }); return o; };
-  const bonusOpts = (sel) => Object.keys(App.db.bonusTypes).sort((a, b) => App.db.bonusTypes[a].name.localeCompare(App.db.bonusTypes[b].name)).map((id) => `<option value="${id}" ${id === sel ? "selected" : ""}>${esc(App.db.bonusTypes[id].name)}</option>`).join("");
-  const slotName = (id) => { const s = C.slotById(App.db, id); return s ? s.name : id; };
+  const bonusOpts = (sel) => Object.keys(App.master.bonusTypes).sort((a, b) => App.master.bonusTypes[a].name.localeCompare(App.master.bonusTypes[b].name)).map((id) => `<option value="${id}" ${id === sel ? "selected" : ""}>${esc(App.master.bonusTypes[id].name)}</option>`).join("");
+  const slotName = (id) => { const s = C.slotById(App.master, id); return s ? s.name : id; };
   const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
-  A.commit = function (msg) { App.db._itemIdx = null; App.saveDb(); if (msg) FX.toast(msg); const c = $("#adm-custom"); if (c) c.style.display = ""; };
+  A.commit = function (msg) { App.refreshDb(); App.saveDb(); if (msg) FX.toast(msg); const c = $("#adm-custom"); if (c) c.style.display = ""; };
 
   A.render = function () {
-    const db = App.db;
+    const db = App.master;
     $("#view-admin").innerHTML = `<div class="admin-layout">
       <div class="panel"><div class="panel-head"><div class="panel-title">Admin</div></div>
         <div class="admin-nav">${SECTIONS.map((s) => `<button data-adm="section" data-v="${s[0]}" class="${A.section === s[0] ? "active" : ""}">${s[1]}</button>`).join("")}</div>
@@ -34,6 +34,41 @@
 
   function body(db) {
     switch (A.section) {
+      case "era": {
+        const E = window.Era, v = App.db, era = db.era;
+        const years = [2008, 2010, 2012, 2014, 2016, 2018, 2021, E.NOW_YEAR];
+        const what = (f) => {
+          const p = [];
+          if (f.cap) p.push("Höchstlevel " + f.cap);
+          if (f.rare) p.push("Zeilen 6 und 7");
+          (f.slots || []).forEach((id) => { const s = db.slots.find((x) => x.id === id); if (s) p.push("Slot " + s.name); });
+          (f.classes || []).forEach((c) => { if (db.classes[c]) p.push("Klasse " + db.classes[c].name); });
+          if (f.itemRe) p.push(db.items.filter((it) => new RegExp(f.itemRe, "i").test(it.id)).length + " Gegenstände");
+          if (f.bonus && f.bonus.length) p.push(f.bonus.length + " Boni");
+          const tg = (f.toggles || []).length + db.toggles.filter((t) => (f.toggleGroups || []).indexOf(t.group) >= 0).length;
+          if (tg) p.push(tg + " Schalter");
+          return p.join(" · ");
+        };
+        const conf = E.conflicts(App.build, db, v);
+        const list = db.features.slice().sort((a, b) => a.year - b.year);
+        return `<div class="stack">
+          <div class="sect-title">Stand des Servers</div>
+          <div class="hint">Wähle das Jahr, auf dem dein Server steht. Alles, was es damals noch nicht gab, wird ausgeblendet: Slots, Klassen, Gegenstände, Boni und Schalter. Darunter kannst du einzelne Features dazu- oder abwählen, falls dein Server Inhalte aus mehreren Jahren mischt.</div>
+          <div class="inline" style="flex-wrap:wrap"><div class="seg">${years.map((y) => `<button data-adm="era-year" data-v="${y}" class="${era.year === y ? "active" : ""}">${y === E.NOW_YEAR ? "Aktuell" : y}</button>`).join("")}</div>
+            <div class="field" style="width:110px"><label>Jahr</label><input type="number" min="${E.BASE_YEAR}" max="${E.NOW_YEAR}" value="${era.year}" data-adm="era-year-f"></div>
+            <button class="btn btn-sm" data-adm="era-clear" ${Object.keys(era.over).length ? "" : "disabled"}>Abweichungen zurücksetzen</button></div>
+          <div class="inline" style="flex-wrap:wrap"><span class="chip gold">Stand: ${esc(v.eraLabel)}</span><span class="chip">Höchstlevel ${v.maxLevel}</span><span class="chip">${v.slots.length} von ${db.slots.length} Slots</span><span class="chip">${v.items.length} von ${db.items.length} Gegenständen</span><span class="chip">${Object.keys(db.classes).length - Object.keys(v.classOff).length} Klassen</span></div>
+          ${conf.length ? `<div class="hint" style="color:#ffb37a">Dein Build „${esc(App.build.name)}“ nutzt Dinge, die es in diesem Stand nicht gibt: ${conf.map(esc).join(", ")}. Sie bleiben gespeichert, ausgeblendete Slots zählen aber nicht mehr mit.</div>` : ""}
+          <div class="table-wrap" style="max-height:none"><table class="tbl"><thead><tr><th>Aktiv</th><th>Feature</th><th>Seit (Jahr)</th><th>Umfasst</th><th></th></tr></thead><tbody>
+          <tr><td><input type="checkbox" checked disabled></td><td><b>Grundspiel</b></td><td>${E.BASE_YEAR}</td><td>Krieger, Ninja, Sura, Schamane · Waffe bis Halskette · 5 Boni · Geiststeine · Höchstlevel ${E.BASE_CAP}</td><td></td></tr>
+          ${list.map((f) => { const on = E.isOn(db, f), byYear = f.year <= era.year, o = era.over[f.id] != null && on !== byYear;
+            return `<tr><td><input type="checkbox" data-adm="era-feat" data-id="${f.id}" ${on ? "checked" : ""}></td><td><b>${esc(f.name)}</b>${f.note ? `<div class="panel-note">${esc(f.note)}</div>` : ""}</td>
+              <td><input type="number" min="2004" max="2099" data-adm="era-feat-year" data-id="${f.id}" value="${f.year}" style="width:80px"></td><td>${esc(what(f))}</td>
+              <td>${o ? `<span class="chip ${on ? "green" : "red"}">${on ? "zusätzlich an" : "abgewählt"}</span>` : ""}</td></tr>`; }).join("")}
+          </tbody></table></div>
+          <div class="hint">Die Jahreszahlen sind ungefähre Angaben für die offiziellen deutschen Server und lassen sich hier ändern. Werte einzelner Gegenstände haben sich über die Jahre ebenfalls geändert; hinterlegt sind die heutigen. Abweichungen deines Servers trägst du unter „Gegenstände“ und „Bonus-Pools“ ein.</div>
+        </div>`;
+      }
       case "items": {
         const list = db.items.filter((it) => it.slot === A.slot && (!A.q || it.name.toLowerCase().indexOf(A.q.toLowerCase()) >= 0)).sort((x, y) => (x.lvl || 0) - (y.lvl || 0));
         const sum = (it) => {
@@ -162,7 +197,7 @@
   const numv = (n) => { const v = val(n); return v === "" ? null : Number(v); };
 
   function itemForm(it) {
-    const db = App.db, isW = it.slot === "weapon";
+    const db = App.master, isW = it.slot === "weapon";
     const r3 = (name, obj) => [0, 9, 15].map((u) => { const r = obj && obj[u]; return `<div class="field"><label>+${u} min</label><input type="number" name="${name}_${u}_a" value="${r ? r[0] : ""}"></div><div class="field"><label>+${u} max</label><input type="number" name="${name}_${u}_b" value="${r ? r[1] : ""}"></div>`; }).join("");
     const fixed = Object.keys(it.fixed || {});
     openForm(it.name || "Neuer Gegenstand", `
@@ -204,7 +239,7 @@
     return `<div class="bonus-row" style="grid-template-columns:minmax(0,1fr) 62px 62px 62px"><select><option value="">– kein –</option>${bonusOpts(bid)}</select>${[0, 9, 15].map((u) => `<input type="number" data-u="${u}" placeholder="+${u}" value="${v(u)}">`).join("")}</div>`;
   }
   function targetForm(i) {
-    const db = App.db, t = i == null ? { id: newId("t_"), name: "Neues Ziel", kind: "monster", lvl: 100, dex: 50, def: 300, type: "none", wres: {}, elem: {}, eres: {}, magicRes: 0 } : db.targets[i];
+    const db = App.master, t = i == null ? { id: newId("t_"), name: "Neues Ziel", kind: "monster", lvl: 100, dex: 50, def: 300, type: "none", wres: {}, elem: {}, eres: {}, magicRes: 0 } : db.targets[i];
     const js = (o) => esc(fmtMap(o || {}));
     openForm(t.name, `
       <div class="field"><label>Name</label><input type="text" name="name" value="${esc(t.name)}"></div>
@@ -243,10 +278,12 @@
   /* ---------- Ereignisse ---------- */
   document.addEventListener("click", (ev) => {
     const a = ev.target.closest("[data-adm]"); if (!a || a.tagName === "INPUT" || a.tagName === "SELECT") return;
-    const act = a.dataset.adm, v = a.dataset.v, db = App.db;
+    const act = a.dataset.adm, v = a.dataset.v, db = App.master;
     let rerender = true;
     switch (act) {
       case "section": A.section = v; break;
+      case "era-year": db.era.year = Number(v); db.era.over = {}; A.commit("Stand: " + (Number(v) === window.Era.NOW_YEAR ? "aktuell" : v)); App.renderAll(); rerender = false; break;
+      case "era-clear": db.era.over = {}; A.commit(); App.renderAll(); rerender = false; break;
       case "item-new": itemForm({ slot: A.slot, lvl: 1, maxUp: 9, atk: A.slot === "weapon" ? {} : undefined }); rerender = false; break;
       case "item-edit": itemForm(db.items.find((x) => x.id === v)); rerender = false; break;
       case "item-dup": { const it = JSON.parse(JSON.stringify(db.items.find((x) => x.id === v))); it.id = newId("x_"); it.name += " (Kopie)"; db.items.push(it); A.commit("Kopie angelegt"); break; }
@@ -273,10 +310,13 @@
   });
   document.addEventListener("change", (ev) => {
     const el = ev.target, act = el.dataset.adm; if (!act) return;
-    const db = App.db, k = el.dataset.k;
+    const db = App.master, k = el.dataset.k;
     const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
     switch (act) {
       case "slot": A.slot = el.value; A.render(); break;
+      case "era-year-f": db.era.year = Math.max(window.Era.BASE_YEAR, Math.min(window.Era.NOW_YEAR, Math.round(Number(el.value)) || window.Era.NOW_YEAR)); db.era.over = {}; A.commit(); App.renderAll(); break;
+      case "era-feat": { const f = db.features.find((x) => x.id === el.dataset.id); if (f) { if (el.checked === (f.year <= db.era.year)) delete db.era.over[f.id]; else db.era.over[f.id] = el.checked; A.commit(); App.renderAll(); } break; }
+      case "era-feat-year": { const f = db.features.find((x) => x.id === el.dataset.id); if (f) { f.year = Math.round(Number(el.value)) || f.year; A.commit(); App.renderAll(); } break; }
       case "q": A.q = el.value; A.render(); break;
       case "pool": A.pool = el.value; A.render(); break;
       case "pool-val": db.pools[A.pool][k] = parseVals(el.value); A.commit(); break;
@@ -288,7 +328,7 @@
       case "ocr-f": db.ocrAliases = db.ocrAliases || {}; db.ocrAliases[el.dataset.id] = el.value; A.commit(); break;
       case "param": db.params[k] = Number(el.value); A.commit(); break;
       case "param-cls": db.params.classes[el.dataset.c][k] = Number(el.value); A.commit(); break;
-      case "import-db": readFile(el, (d) => { if (d && d.items && d.pools && d.slots && d.targets) { d.version = window.M2DEFAULTS().version; App.db = d; A.commit("Daten geladen"); A.render(); } else FX.toast("Das ist keine Daten-Datei dieses Rechners"); }); break;
+      case "import-db": readFile(el, (d) => { if (d && d.items && d.pools && d.slots && d.targets) { d.version = window.M2DEFAULTS().version; App.master = d; A.commit("Daten geladen"); A.render(); } else FX.toast("Das ist keine Daten-Datei dieses Rechners"); }); break;
       case "import-builds": readFile(el, (d) => { if (Array.isArray(d) && d.length && d[0].equip) { d.forEach((b) => { b.id = newId("b"); App.builds.push(b); }); App.saveBuilds(); FX.toast(d.length + " Builds geladen"); App.renderAll(); } else FX.toast("Das ist keine Build-Datei"); }); break;
     }
   });

@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const C = window.Calc, O = window.Opt, FX = window.FX;
-  const App = { db: null, build: null, builds: [], view: "build", res: null, pot: {}, sugg: [], pin: null, lastExp: null, drawerSlot: null };
+  const App = { db: null, master: null, build: null, builds: [], view: "build", res: null, pot: {}, sugg: [], pin: null, lastExp: null, drawerSlot: null };
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -19,14 +19,16 @@
   const load = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* Speicher nicht verfügbar */ } };
   App.saveBuilds = function () { save(LS.builds, App.builds); save(LS.cur, App.build.id); };
-  App.saveDb = function () { const d = Object.assign({}, App.db); delete d._itemIdx; delete d._itemIdxSrc; save(LS.db, d); };
-  App.resetDb = function () { try { localStorage.removeItem(LS.db); } catch (e) { /* egal */ } App.db = window.M2DEFAULTS(); };
+  // App.master = vollständige Stammdaten (werden gespeichert, Admin bearbeitet sie). App.db = Sicht nach gewähltem Zeitalter.
+  App.refreshDb = function () { App.db = window.Era.view(App.master); };
+  App.saveDb = function () { const d = Object.assign({}, App.master); delete d._itemIdx; delete d._itemIdxSrc; save(LS.db, d); };
+  App.resetDb = function () { try { localStorage.removeItem(LS.db); } catch (e) { /* egal */ } App.master = window.M2DEFAULTS(); App.refreshDb(); };
   App.dbIsCustom = function () { try { return !!localStorage.getItem(LS.db); } catch (e) { return false; } };
 
   App.newBuild = function (cls, name) {
     const c = App.db.classes[cls];
     const b = {
-      id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name || c.name + "-Build", cls, branch: Object.keys(c.branches)[0], level: 120,
+      id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name || c.name + "-Build", cls, branch: Object.keys(c.branches)[0], level: Math.min(120, App.db.maxLevel || 120),
       stats: { str: 90, dex: 90, vit: 90, int: 90 }, mode: "pvm", targetId: "st_metin_verwunschener_wald_lv_120", targetOverride: {},
       attack: "hit", skillLevel: 40, weaponType: "any", equip: {}, toggles: {},
     };
@@ -45,13 +47,15 @@
   App.init = function () {
     const def = window.M2DEFAULTS();
     const stored = load(LS.db);
-    App.db = stored && stored.version === def.version ? stored : def;
+    App.master = stored && stored.version === def.version ? stored : def;
+    App.db = App.master;
     if (App.db !== def) {
       // neu hinzugekommene Standard-Gegenstände in angepasste Daten nachtragen (ohne eigene Änderungen zu überschreiben)
       const have = new Set(App.db.items.map((it) => it.id));
       const gone = new Set(App.db.removedItems || []);
       def.items.forEach((it) => { if (!have.has(it.id) && !gone.has(it.id)) App.db.items.push(it); });
     }
+    App.refreshDb();
     App.builds = load(LS.builds) || [];
     if (!App.builds.length) App.builds = [App.newBuild("warrior", "Mein Krieger")];
     const cur = load(LS.cur);
@@ -105,6 +109,8 @@
   function renderHeader() {
     const b = App.build;
     $("#header-actions").innerHTML = `
+      <button class="btn btn-sm" data-act="goto-era" data-tip="Zeitalter des Servers: Jahr und Features einstellen">🕰️ ${esc(App.db.eraLabel)}</button>
+      <div class="seg" data-tip="Sprache / Language"><button data-act="lang" data-v="de" class="${window.I18N && window.I18N.lang === "de" ? "active" : ""}">DE</button><button data-act="lang" data-v="en" class="${window.I18N && window.I18N.lang === "en" ? "active" : ""}">EN</button></div>
       <div class="seg" data-tip="Schaltet Ziele und Formeln zwischen Monstern und Spielern um">
         <button data-act="mode" data-v="pvm" class="${b.mode === "pvm" ? "active" : ""}">PvM</button>
         <button data-act="mode" data-v="pvp" class="${b.mode === "pvp" ? "active" : ""}">PvP</button>
@@ -124,10 +130,10 @@
     $("#panel-char").innerHTML = `
       <div class="panel-head"><div class="panel-title">Charakter</div></div>
       <div class="stack">
-        <div class="class-grid">${Object.keys(db.classes).map((id) => `<button class="class-btn ${id === b.cls ? "active" : ""}" data-act="cls" data-v="${id}"><span class="ico">${db.classes[id].icon}</span>${esc(db.classes[id].name)}</button>`).join("")}</div>
+        <div class="class-grid">${Object.keys(db.classes).filter((id) => id === b.cls || !(db.classOff || {})[id]).map((id) => `<button class="class-btn ${id === b.cls ? "active" : ""}" data-act="cls" data-v="${id}"><span class="ico">${db.classes[id].icon}</span>${esc(db.classes[id].name)}</button>`).join("")}</div>
         <div class="seg wide">${Object.keys(cls.branches).map((id) => `<button data-act="branch" data-v="${id}" class="${id === b.branch ? "active" : ""}">${esc(cls.branches[id])}</button>`).join("")}</div>
         <div class="row c2">
-          <div class="field"><label>Level</label><input type="number" min="1" max="200" data-f="level" value="${b.level}"></div>
+          <div class="field"><label>Level</label><input type="number" min="1" max="200" data-f="level" value="${b.level}" ${b.level > (db.maxLevel || 999) ? `style="border-color:#ef4d56" data-tip="Über dem Höchstlevel des gewählten Zeitalters (${db.maxLevel})"` : ""}></div>
           <div class="field"><label>Statuspunkte</label><button class="btn" data-act="stats-max">Alle auf ${db.params.maxStat}</button></div>
         </div>
         <div class="row c4">${["str", "dex", "vit", "int"].map((s) => `<div class="field"><label>${s.toUpperCase()}</label><input type="number" min="1" max="999" data-f="stat" data-k="${s}" value="${b.stats[s]}"></div>`).join("")}</div>
@@ -825,6 +831,8 @@
         }
         case "opt-tier": optState.tier = v; savePlan(); renderOpt(); break;
         case "goto-opt": App.setView("opt"); break;
+        case "goto-era": if (window.Admin) window.Admin.section = "era"; App.setView("admin"); break;
+        case "lang": if (window.I18N) window.I18N.set(v); break;
         case "detail": {
           if (ev.target.closest("a, button")) break;
           if (a.dataset.src === "opt" && optState.result) openDetail(v, b, optState.result.build, "Ergebnis der Optimierung");

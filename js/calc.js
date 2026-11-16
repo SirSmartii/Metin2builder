@@ -74,9 +74,10 @@
   /* ---------- Boni einsammeln ---------- */
   C.itemById = function (db, id) {
     if (!id) return null;
-    if (!db._itemIdx || db._itemIdxSrc !== db.items) {
-      db._itemIdx = {}; db._itemIdxSrc = db.items;
-      db.items.forEach((it) => { db._itemIdx[it.id] = it; });
+    const all = db.allItems || db.items; // ausgerüstete Gegenstände bleiben auch dann bekannt, wenn das Zeitalter sie ausblendet
+    if (!db._itemIdx || db._itemIdxSrc !== all) {
+      db._itemIdx = {}; db._itemIdxSrc = all;
+      all.forEach((it) => { db._itemIdx[it.id] = it; });
     }
     return db._itemIdx[id] || null;
   };
@@ -131,7 +132,7 @@
   /* ---------- Ziel ---------- */
   C.resolveTarget = function (build, db) {
     const list = db.targets;
-    let t = list.find((x) => x.id === build.targetId);
+    let t = (db.allTargets || list).find((x) => x.id === build.targetId);
     if (!t || (build.mode === "pvp") !== (t.kind === "player")) t = list.find((x) => (build.mode === "pvp") === (x.kind === "player")) || list[0];
     const o = Object.assign({ wres: {}, elem: {}, eres: {}, res: {} }, t, build.targetOverride || {});
     return o;
